@@ -90,6 +90,7 @@ class MLLPClient:
         messages = []
         idx = 0
         expected = MLLP_START_BLOCK[0]
+        consumed = 0
 
         while idx < len(buffer):
             if expected is not None:
