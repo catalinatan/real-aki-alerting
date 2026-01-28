@@ -31,7 +31,7 @@ class TestMLLPClientParsing:
 
     def test_parse_single_complete_message(self):
         """Parse a single complete MLLP-wrapped message."""
-        hl7_content = b"MSH|^~\\&|APP|FAC|||20260126120000||ADT^A01|123|P|2.5"
+        hl7_content = b"MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ADT^A01|||2.5"
         buffer = MLLP_START_BLOCK + hl7_content + MLLP_END_BLOCK + MLLP_CARRIAGE_RETURN
 
         messages, remaining = self.client._parse_mllp_buffer(buffer)
@@ -42,8 +42,8 @@ class TestMLLPClientParsing:
 
     def test_parse_multiple_complete_messages(self):
         """Parse multiple complete MLLP messages in one buffer."""
-        msg1 = b"MSH|^~\\&|APP|FAC|||20260126120000||ADT^A01|123|P|2.5"
-        msg2 = b"MSH|^~\\&|APP|FAC|||20260126120001||ORU^R01|124|P|2.5"
+        msg1 = b"MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ADT^A01|||2.5"
+        msg2 = b"MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ORU^R01|||2.5"
 
         buffer = (
             MLLP_START_BLOCK + msg1 + MLLP_END_BLOCK + MLLP_CARRIAGE_RETURN +
@@ -59,7 +59,7 @@ class TestMLLPClientParsing:
 
     def test_parse_partial_message_returns_remaining(self):
         """Incomplete message should remain in buffer."""
-        hl7_content = b"MSH|^~\\&|APP|FAC|||20260126120000||ADT^A01|123|P|2.5"
+        hl7_content = b"MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ADT^A01|||2.5"
         # Missing end block and carriage return
         buffer = MLLP_START_BLOCK + hl7_content
 
@@ -92,7 +92,7 @@ class TestMLLPClientWrapping:
 
     def test_wrap_mllp_message(self):
         """Wrap a message with MLLP framing bytes."""
-        message = b"MSH|^~\\&|APP|FAC|||20260126120000||ACK|123|P|2.5"
+        message = b"MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ACK|||2.5"
 
         wrapped = self.client._wrap_mllp_message(message)
 
@@ -144,25 +144,25 @@ class TestMLLPClientACKGeneration:
     def test_generate_ack_success(self):
         """Generate ACK for a valid HL7 message."""
         hl7_message = (
-            "MSH|^~\\&|SEND_APP|SEND_FAC|RECV_APP|RECV_FAC|20260126120000||ADT^A01|12345|P|2.5\r"
-            "PID|1||123456||DOE^JOHN||19800101|M\r"
+            "MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ADT^A01|||2.5\r"
+            "PID|1||478237423||ELIZABETH HOLMES||19840203|F\r"
         )
 
         ack = self.client._generate_ack(hl7_message, ack_code="AA")
 
         assert "MSH|" in ack
-        assert "MSA|AA|12345" in ack
+        assert "MSA|AA|" in ack
         assert "ACK" in ack
 
     def test_generate_ack_error_code(self):
         """Generate ACK with error code."""
         hl7_message = (
-            "MSH|^~\\&|SEND_APP|SEND_FAC|RECV_APP|RECV_FAC|20260126120000||ADT^A01|99999|P|2.5\r"
+            "MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ADT^A01|||2.5\r"
         )
 
         ack = self.client._generate_ack(hl7_message, ack_code="AE")
 
-        assert "MSA|AE|99999" in ack
+        assert "MSA|AE|" in ack
 
     def test_generate_ack_fallback_on_parse_error(self):
         """Fallback ACK when message parsing fails."""
@@ -184,11 +184,11 @@ class TestMLLPClientBuildACKSegments:
         """ACK should swap sending and receiving applications."""
         msh = MagicMock()
         msh.__getitem__ = lambda self, i: {
-            3: "SEND_APP",
-            4: "SEND_FAC",
-            5: "RECV_APP",
-            6: "RECV_FAC",
-            11: "P",
+            3: "SIMULATION",
+            4: "SOUTH RIVERSIDE",
+            5: "",
+            6: "",
+            11: "",
             12: "2.5",
         }.get(i, "")
 
@@ -200,11 +200,9 @@ class TestMLLPClientBuildACKSegments:
         msh_line = lines[0]
         fields = msh_line.split("|")
 
-        # MSH|^~\&|RECV_APP|RECV_FAC|SEND_APP|SEND_FAC|...
-        assert fields[2] == "RECV_APP"  # Sending Application
-        assert fields[3] == "RECV_FAC"  # Sending Facility
-        assert fields[4] == "SEND_APP"  # Receiving Application
-        assert fields[5] == "SEND_FAC"  # Receiving Facility
+        # MSH|^~\&|||(empty recv becomes send)|SIMULATION|SOUTH RIVERSIDE|...
+        assert fields[4] == "SIMULATION"   # Receiving Application
+        assert fields[5] == "SOUTH RIVERSIDE"  # Receiving Facility
 
 
 class TestMLLPClientConnection:
@@ -289,7 +287,7 @@ class TestMLLPClientMessageHandler:
         handler = AsyncMock(return_value=None)
         client = MLLPClient(host="localhost", port=8440, message_handler=handler)
 
-        hl7_message = "MSH|^~\\&|APP|FAC|||20260126120000||ADT^A01|123|P|2.5"
+        hl7_message = "MSH|^~\\&|SIMULATION|SOUTH RIVERSIDE|||202401201630||ADT^A01|||2.5"
 
         # Simulate processing a message
         mock_reader = AsyncMock()

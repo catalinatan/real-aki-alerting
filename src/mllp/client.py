@@ -400,6 +400,7 @@ async def main():
     async def custom_handler(hl7_message: str) -> Optional[str]:
         """
         Process HL7 message and optionally return custom ACK.
+        
         Args:
             hl7_message (str): Received HL7 message.
 
