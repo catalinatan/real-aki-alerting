@@ -75,17 +75,17 @@ class HL7Parser:
     
     def _parse_datetime(self, datetime_str: str) -> Optional[datetime]:
         """
-        Parse HL7 datetime format 'yyyyMMddHHmm' into 'yyyyMMddHHmmss'.
+        Parse HL7 datetime format 'yyyyMMddHHmmss'.
 
         Args:
-            datetime_str (str): HL7 datetime string.
+            datetime_str (str): HL7 datetime string (14 characters).
 
         Returns:
             Optional[datetime]: Parsed datetime or None if invalid.
         """
-        if not datetime_str:
+        if not datetime_str or len(datetime_str) != 14:
             return None
-        
+
         try:
             return datetime.strptime(datetime_str, "%Y%m%d%H%M%S")
         except ValueError:
@@ -95,22 +95,22 @@ class HL7Parser:
     
     def _parse_age(self, datetime_str: str) -> Optional[int]:
         """
-        Calculate age from HL7 datetime format 'yyyyMMddHHmm'.
+        Calculate age from HL7 date format 'yyyyMMdd'.
 
         Args:
-            datetime_str (str): HL7 datetime string.
+            datetime_str (str): HL7 date string (8 characters).
 
         Returns:
             Optional[int]: Calculated age or None if invalid.
         """
-        if not datetime_str:
+        if not datetime_str or len(datetime_str) != 8:
             return None
-        
+
         try:
-            dob = datetime.strptime(datetime_str, "%Y%m%d%H%M")
+            dob = datetime.strptime(datetime_str, "%Y%m%d")
             today = datetime.now()
             age = today.year - dob.year
-            
+
             # Adjust if birthday hasn't occurred yet this year
             if (today.month, today.day) < (dob.month, dob.day):
                 age -= 1
