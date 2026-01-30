@@ -141,14 +141,15 @@ class PatientDB:
                     if date_str and result_str:
                         try:
                             creatinine_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                            creatinine_date_str = creatinine_date.strftime("%Y-%m-%d %H:%M:%S")
                             creatinine_result = float(result_str)
 
                             self.conn.execute("""
                                 INSERT OR IGNORE INTO creatinine_history
                                 (mrn, creatinine_date, creatinine_result)
                                 VALUES (?, ?, ?)
-                            """, (mrn, creatinine_date, creatinine_result))
-                            
+                            """, (mrn, creatinine_date_str, creatinine_result))
+
                             load_count += 1
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Skipping invalid row: {e}")
@@ -200,11 +201,13 @@ class PatientDB:
             (result.mrn,)
         )
 
+        creatinine_date_str = result.creatinine_date.strftime("%Y-%m-%d %H:%M:%S")
+
         self.conn.execute("""
             INSERT OR IGNORE INTO creatinine_history
             (mrn, creatinine_date, creatinine_result)
             VALUES (?, ?, ?)
-        """, (result.mrn, result.creatinine_date, result.creatinine_result))
+        """, (result.mrn, creatinine_date_str, result.creatinine_result))
         self.conn.commit()
         logger.debug(f"Inserted creatinine for {result.mrn}: {result.creatinine_result}")
 
@@ -307,7 +310,7 @@ async def main():
                 print(f"[{idx+1}] {result['date']}: {result['result']} µmol/L")
             
             if len(patient['creatinine_history']) > 3:
-                print(f"    ... and {len(patient['creatinine_history']) - 3} more")
+                print(f" ... and {len(patient['creatinine_history']) - 3} more")
         else:
             print(f"MRN: {mrn} - NOT FOUND")
         print()
@@ -329,25 +332,25 @@ async def main():
                 # ADT message - patient demographics
                 print(f"Patient Info - MRN: {result.mrn}")
                 if result.age is not None:
-                    print(f"  Age: {result.age}")
+                    print(f"Age: {result.age}")
                 if result.sex:
-                    print(f"  Sex: {result.sex}")
+                    print(f"Sex: {result.sex}")
 
                 # Update database
                 db.upsert_patient(result)
-                print("✓ Database updated with patient demographics")
+                print("Database updated with patient demographics")
 
             elif isinstance(result, CreatinineResult):
                 # ORU message - creatinine result
                 print(f"Creatinine Result - MRN: {result.mrn}")
                 if result.creatinine_date:
-                    print(f"  Date: {result.creatinine_date}")
+                    print(f"Date: {result.creatinine_date}")
                 if result.creatinine_result is not None:
-                    print(f"  Result: {result.creatinine_result} µmol/L")
+                    print(f"Result: {result.creatinine_result} µmol/L")
 
                 # Update database
                 db.insert_creatinine(result)
-                print("✓ Database updated with creatinine result")
+                print("Database updated with creatinine result")
 
             print()
 
