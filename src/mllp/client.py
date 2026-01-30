@@ -99,7 +99,7 @@ class MLLPClient:
                                      Expected: {expected}, Found: {hex(buffer[idx])} at position {idx}""")
                 
                 if expected == MLLP_START_BLOCK[0]:
-                    expected = None  # Now read until MLLP_END_BLOCK
+                    expected = None  # Read until MLLP_END_BLOCK
                     consumed = idx
                 elif expected == MLLP_CARRIAGE_RETURN[0]:
                     # Extract message (between start block and end block)
