@@ -5,6 +5,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -70,8 +71,10 @@ class SimulatorTest(unittest.TestCase):
         with open(messages_filename, "wb") as w:
             for m in (ADT_A01, ORU_R01, ADT_A03):
                 w.write(to_mllp(m))
+        simulator_path = os.path.join(os.path.dirname(__file__), "simulator.py")
         self.simulator = subprocess.Popen([
-            "./simulator.py",
+            sys.executable,
+            simulator_path,
             f"--mllp={TEST_MLLP_PORT}",
             f"--pager={TEST_PAGER_PORT}",
             f"--messages={messages_filename}"
