@@ -8,13 +8,12 @@ COPY requirements.txt ./
 RUN /app/bin/pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
-COPY data/training.csv /data/training.csv
-COPY data/history.csv /data/history.csv
+COPY data/training.csv /app/data/training.csv
 COPY main.py ./main.py
 
 ENV PYTHONUNBUFFERED=1 \
     HISTORY_CSV=/data/history.csv \
-    TRAINING_CSV=/data/training.csv
+    TRAINING_CSV=/app/data/training.csv
 
 ENTRYPOINT ["/app/bin/python", "main.py"]
 
