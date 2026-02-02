@@ -16,13 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 from enum import Enum
-import asyncio
-import signal
 
 import hl7
-
-from src.mllp.client import MLLPClient
-from src.logger import logger
 
 class MessageType(Enum):
     """HL7 Message types supported by this parser."""
@@ -231,52 +226,3 @@ class HL7Parser:
 
         except Exception as e:
             raise ValueError(f"Failed to parse HL7 message: {e}") from e
-
-
-async def main():
-    """
-    Example usage of parsing HL7 messages from an MLLP server.
-    """
-    parser = HL7Parser()
-
-    async def handler(hl7_message: str) -> None:
-        """
-        Parse HL7 message and log the result.
-
-        Args:
-            hl7_message (str): Received HL7 message.
-
-        Returns:
-            None
-        """
-        try:
-            result = parser.parse(hl7_message)
-
-            if result is None:
-                logger.warning("Unsupported message type, skipping.")
-            elif isinstance(result, PatientInfo):
-                logger.info(f"Patient: MRN={result.mrn}, Age={result.age}, Sex={result.sex}")
-            elif isinstance(result, CreatinineResult):
-                logger.info(f"Creatinine: MRN={result.mrn}, Date={result.creatinine_date}, Result={result.creatinine_result}")
-
-        except ValueError as e:
-            logger.error(f"Parse error: {e}")
-
-        return None
-
-    client = MLLPClient(
-        host="localhost",
-        port=8440,
-        message_handler=handler,
-    )
-
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(client.stop()))
-
-    await client.run()
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())

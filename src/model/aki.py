@@ -5,9 +5,6 @@ Initializes by training on training.csv on startup. Then, accepts stream of  ORU
 and predicts AKI presence.
 """
 
-import asyncio
-import signal
-
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
@@ -16,8 +13,6 @@ from typing import Optional
 
 from src.logger import logger
 from src.database.patient import PatientDB
-from src.mllp.client import MLLPClient
-from src.hl7.parser import HL7Parser, PatientInfo, CreatinineResult
 
 PREDICTION_THRESHOLD = 0.5
 
@@ -286,107 +281,3 @@ class AKIClassifier():
         logger.info(f"Model trained on {len(df)} samples")
 
         return None
-
-async def main():
-    """
-    AKI Inference Pipeline:
-        1. Initialize PatientDB and load historical CSV
-        2. Train AKI classifier on training.csv
-        3. Connect to MLLP simulator
-        4. On each HL7 message:
-            - ADT^A01/A03: Upsert patient demographics to DB
-            - ORU^R01: Insert creatinine result to DB, then run AKI inference
-
-    Usage:
-        # Start simulator first (in another terminal):
-        cd simulator
-        python simulator.py --messages messages.mllp --mllp 8440
-
-        # Then run this module:
-        python -m src.model.aki
-    """
-    # Initialize database and load historical data
-    db = PatientDB(db_path="data/patient.db")
-    db.load_csv("simulator/history.csv")
-
-    # Initialize and train classifier
-    classifier = AKIClassifier(patient_db=db)
-    classifier.train(csv_path="data/training.csv")
-
-    # Initialize HL7 parser
-    parser = HL7Parser()
-
-    async def handle_message(hl7_message: str) -> Optional[str]:
-        """
-        Process incoming HL7 messages.
-
-        - ADT messages: Upsert patient demographics
-        - ORU^R01 messages: Insert creatinine result and run AKI inference
-
-        Args:
-            hl7_message (str): Raw HL7 message string.
-
-        Returns:
-            Optional[str]: Custom ACK message or None for auto-generated ACK.
-        """
-        try:
-            result = parser.parse(hl7_message)
-
-            if result is None:
-                logger.debug("Unsupported message type, skipping.")
-                return None
-
-            if isinstance(result, PatientInfo):
-                # ADT^A01 or ADT^A03 - patient demographics
-                db.upsert_patient(result)
-                logger.info(f"Updated patient demographics: MRN={result.mrn}")
-
-            elif isinstance(result, CreatinineResult):
-                # ORU^R01 - creatinine result
-                db.insert_creatinine(result)
-                logger.info(f"Inserted creatinine for MRN={result.mrn}: {result.creatinine_result}")
-
-                # Run AKI inference
-                prediction = classifier.predict(result.mrn)
-                if prediction == "y":
-                    logger.warning(f"AKI ALERT: Patient {result.mrn} predicted positive for AKI")
-                else:
-                    logger.info(f"AKI prediction for {result.mrn}: negative")
-
-        except ValueError as e:
-            logger.error(f"Parse error: {e}")
-        except Exception as e:
-            logger.error(f"Error processing message: {e}", exc_info=True)
-
-        return None  # Auto-generate ACK
-
-    # Create MLLP client
-    client = MLLPClient(
-        host="localhost",
-        port=8440,
-        message_handler=handle_message,
-        reconnect_delay=5.0,
-        auto_reconnect=True
-    )
-
-    # Setup graceful shutdown
-    loop = asyncio.get_running_loop()
-
-    def signal_handler():
-        logger.info("Received shutdown signal")
-        asyncio.create_task(client.stop())
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, signal_handler)
-
-    # Run client
-    logger.info("Starting AKI inference pipeline...")
-    try:
-        await client.run()
-    finally:
-        db.close()
-        logger.info("AKI inference pipeline stopped.")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

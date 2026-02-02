@@ -11,14 +11,11 @@ with durability.
 import csv
 import io
 import sqlite3
-import asyncio
-import signal
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from src.mllp.client import MLLPClient
-from src.hl7.parser import PatientInfo, CreatinineResult, HL7Parser
+from src.hl7.parser import PatientInfo, CreatinineResult
 from src.logger import logger
 
 class PatientDB:
@@ -269,123 +266,3 @@ class PatientDB:
         if self.conn:
             self.conn.close()
             self.conn = None
-
-async def main():
-    """
-    To demonstrate database loading and HL7 integration.
-        1. Initialize database
-        2. Load historical data from CSV
-        3. Query sample patients
-        4. Connect to MLLP simulator and process HL7 messages
-    
-    Usage:
-        # Start simulator first (in another terminal):
-        cd simulator
-        python simulator.py --messages messages.mllp --mllp 8440
-        
-        # Then run this test:
-        python -m src.database.patient
-    """
-
-    # Initialize database
-    db = PatientDB(db_path="data/patient_test.db")
-    
-    # Load CSV
-    csv_path = "simulator/history.csv"
-    db.load_csv(csv_path)
-    
-    # Query first few MRNs from CSV
-    sample_mrns = ["189386394", "142332724", "107446424"]
-    
-    for mrn in sample_mrns:
-        patient = db.query_patient(mrn)
-        if patient:
-            print(f"MRN: {patient['mrn']}")
-            print(f"Age: {patient['age']}")
-            print(f"Sex: {patient['sex']}")
-            print(f"Creatinine History: {len(patient['creatinine_history'])} results")
-            
-            # Show first 3 results
-            for idx, result in enumerate(patient['creatinine_history'][:3]):
-                print(f"[{idx+1}] {result['date']}: {result['result']} µmol/L")
-            
-            if len(patient['creatinine_history']) > 3:
-                print(f" ... and {len(patient['creatinine_history']) - 3} more")
-        else:
-            print(f"MRN: {mrn} - NOT FOUND")
-        print()
-    
-    # MLLP integration
-    parser = HL7Parser()
-    
-    # Message handler
-    async def handle_message(hl7_message: str):
-        """Process incoming HL7 messages and update database."""
-        try:
-            # Parse message (returns PatientInfo, CreatinineResult, or None)
-            result = parser.parse(hl7_message)
-
-            if result is None:
-                print("Unsupported message type, skipping...")
-
-            elif isinstance(result, PatientInfo):
-                # ADT message - patient demographics
-                print(f"Patient Info - MRN: {result.mrn}")
-                if result.age is not None:
-                    print(f"Age: {result.age}")
-                if result.sex:
-                    print(f"Sex: {result.sex}")
-
-                # Update database
-                db.upsert_patient(result)
-                print("Database updated with patient demographics")
-
-            elif isinstance(result, CreatinineResult):
-                # ORU message - creatinine result
-                print(f"Creatinine Result - MRN: {result.mrn}")
-                if result.creatinine_date:
-                    print(f"Date: {result.creatinine_date}")
-                if result.creatinine_result is not None:
-                    print(f"Result: {result.creatinine_result} µmol/L")
-
-                # Update database
-                db.insert_creatinine(result)
-                print("Database updated with creatinine result")
-
-            print()
-
-        except ValueError as e:
-            logger.error(f"Parse error: {e}")
-        except Exception as e:
-            logger.error(f"Error processing message: {e}", exc_info=True)
-
-        return None  # Auto-generate ACK
-    
-    # Create MLLP client
-    client = MLLPClient(
-        host="localhost",
-        port=8440,
-        message_handler=handle_message,
-        reconnect_delay=5.0,
-        auto_reconnect=True
-    )
-    
-    # Setup graceful shutdown
-    loop = asyncio.get_running_loop()
-    
-    def signal_handler():
-        asyncio.create_task(client.stop())
-    
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, signal_handler)
-    
-    # Run client
-    try:
-        await client.run()
-    finally:
-        db.close()
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
