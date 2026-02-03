@@ -16,9 +16,9 @@ from src.pager.pager import Pager
 
 DEFAULT_MLLP_ADDRESS = "localhost:8440"
 DEFAULT_PAGER_ADDRESS = "localhost:8441"
-DEFAULT_DB_PATH = "/app/data/patient.db"
+DEFAULT_DB_PATH = "data/patient.db"
 DEFAULT_HISTORY_CSV = "/data/history.csv"
-DEFAULT_TRAINING_CSV = "/app/data/training.csv"
+DEFAULT_TRAINING_CSV = "/data/training.csv"
 
 
 def _parse_host_port(address: str) -> tuple[str, int]:
@@ -100,7 +100,7 @@ async def run() -> None:
     classifier.train(csv_path=training_csv)
 
     parser = HL7Parser()
-    pager = Pager(pager_url)
+    pager = Pager(pager_url, payload_format="csv")
 
     async def handle_message(hl7_message: str) -> Optional[str]:
         try:
