@@ -100,7 +100,7 @@ async def run() -> None:
     classifier.train(csv_path=training_csv)
 
     parser = HL7Parser()
-    pager = Pager(pager_url, payload_format="csv")
+    pager = Pager(pager_url)
 
     async def handle_message(hl7_message: str) -> Optional[str]:
         try:
