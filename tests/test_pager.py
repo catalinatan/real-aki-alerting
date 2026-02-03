@@ -54,8 +54,8 @@ class TestPagerPageSuccess:
 
         mock_post.assert_called_once()
         call_kwargs = mock_post.call_args[1]
-        assert call_kwargs["json"]["mrn"] == "87654321"
-        assert call_kwargs["json"]["prediction_time"] == "2024-01-20T14:25:30"
+        assert call_kwargs["data"] == "87654321,2024-01-20T14:25:30"
+        assert call_kwargs["headers"] == {"Content-Type": "text/plain"}
 
     @patch("requests.post")
     def test_page_sends_to_correct_url(self, mock_post):
@@ -68,7 +68,8 @@ class TestPagerPageSuccess:
 
         mock_post.assert_called_once_with(
             "https://example.com/api/page",
-            json={"mrn": "12345678", "prediction_time": "2024-01-20T16:30:00"},
+            data="12345678,2024-01-20T16:30:00",
+            headers={"Content-Type": "text/plain"},
             timeout=3
         )
 
@@ -169,7 +170,7 @@ class TestPagerPageEdgeCases:
 
         assert result is True
         call_kwargs = mock_post.call_args[1]
-        assert call_kwargs["json"]["mrn"] == ""
+        assert call_kwargs["data"] == ",2024-01-20T16:30:00"
 
     @patch("requests.post")
     def test_page_with_empty_prediction_time(self, mock_post):
@@ -182,7 +183,7 @@ class TestPagerPageEdgeCases:
 
         assert result is True
         call_kwargs = mock_post.call_args[1]
-        assert call_kwargs["json"]["prediction_time"] == ""
+        assert call_kwargs["data"] == "12345678"
 
     @patch("requests.post")
     def test_page_with_special_characters_in_mrn(self, mock_post):
@@ -195,4 +196,4 @@ class TestPagerPageEdgeCases:
 
         assert result is True
         call_kwargs = mock_post.call_args[1]
-        assert call_kwargs["json"]["mrn"] == "MRN-123/456"
+        assert call_kwargs["data"] == "MRN-123/456,2024-01-20T16:30:00"
