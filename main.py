@@ -3,7 +3,6 @@
 import asyncio
 import os
 import signal
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -17,9 +16,9 @@ from src.pager.pager import Pager
 
 DEFAULT_MLLP_ADDRESS = "localhost:8440"
 DEFAULT_PAGER_ADDRESS = "localhost:8441"
-DEFAULT_DB_PATH = "data/patient.db"
+DEFAULT_DB_PATH = "/app/data/patient.db"
 DEFAULT_HISTORY_CSV = "/data/history.csv"
-DEFAULT_TRAINING_CSV = "/data/training.csv"
+DEFAULT_TRAINING_CSV = "/app/data/training.csv"
 
 
 def _parse_host_port(address: str) -> tuple[str, int]:
@@ -83,10 +82,6 @@ def _resolve_training_csv() -> str:
     )
 
 
-def _prediction_timestamp() -> str:
-    return datetime.utcnow().strftime("%Y%m%d%H%M%S")
-
-
 async def run() -> None:
     mllp_address = os.getenv("MLLP_ADDRESS", DEFAULT_MLLP_ADDRESS)
     pager_address = os.getenv("PAGER_ADDRESS", DEFAULT_PAGER_ADDRESS)
@@ -128,7 +123,9 @@ async def run() -> None:
 
                 prediction = classifier.predict(result.mrn)
                 if prediction == "y":
-                    prediction_time = _prediction_timestamp()
+                    prediction_time = None
+                    if result.creatinine_date:
+                        prediction_time = result.creatinine_date.strftime("%Y%m%d%H%M")
                     success = await asyncio.to_thread(
                         pager.page, result.mrn, prediction_time
                     )
