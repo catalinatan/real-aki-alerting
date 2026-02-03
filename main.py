@@ -125,7 +125,7 @@ async def run() -> None:
                 if prediction == "y":
                     prediction_time = None
                     if result.creatinine_date:
-                        prediction_time = result.creatinine_date.strftime("%Y%m%d%H%M")
+                        prediction_time = result.creatinine_date.strftime("%Y%m%d%H%M%S")
                     success = await asyncio.to_thread(
                         pager.page, result.mrn, prediction_time
                     )
