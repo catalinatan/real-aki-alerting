@@ -93,6 +93,13 @@ async def run() -> None:
     history_csv = _resolve_history_csv()
     training_csv = _resolve_training_csv()
 
+    # Log configurations for visibility
+    logger.info(f"MLLP Address: {host}:{port}")
+    logger.info(f"Pager URL: {pager_url}")
+    logger.info(f"Database Path: {db_path}")
+    logger.info(f"History CSV: {history_csv}")
+    logger.info(f"Training CSV: {training_csv}")
+
     db = PatientDB(db_path=db_path)
     db.load_csv(history_csv)
 
