@@ -16,7 +16,7 @@ from src.pager.pager import Pager
 
 DEFAULT_MLLP_ADDRESS = "localhost:8440"
 DEFAULT_PAGER_ADDRESS = "localhost:8441"
-DEFAULT_DB_PATH = "data/patient.db"
+DEFAULT_DB_PATH = "/state/patient.db"
 DEFAULT_HISTORY_CSV = "/data/history.csv"
 DEFAULT_TRAINING_CSV = "/data/training.csv"
 
@@ -100,8 +100,13 @@ async def run() -> None:
     logger.info(f"History CSV: {history_csv}")
     logger.info(f"Training CSV: {training_csv}")
 
+    db_exists = Path(db_path).exists()
     db = PatientDB(db_path=db_path)
-    db.load_csv(history_csv)
+    if db_exists:
+        logger.info(f"Existing database found at {db_path}, skipping history CSV import.")
+    else:
+        logger.info(f"No existing database at {db_path}, loading history CSV...")
+        db.load_csv(history_csv)
 
     classifier = AKIClassifier(patient_db=db)
     classifier.train(csv_path=training_csv)

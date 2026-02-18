@@ -80,7 +80,8 @@ class PatientDB:
                         mrn TEXT,
                         creatinine_date TEXT,
                         creatinine_result REAL,
-                        FOREIGN KEY(mrn) REFERENCES patients(mrn)
+                        FOREIGN KEY(mrn) REFERENCES patients(mrn),
+                        UNIQUE(mrn, creatinine_date)
                     );
 
                     CREATE INDEX IF NOT EXISTS idx_mrn ON creatinine_history(mrn);

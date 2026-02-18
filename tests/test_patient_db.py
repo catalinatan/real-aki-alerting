@@ -480,3 +480,30 @@ class TestConnectionManagement:
 
         assert db.conn is None
 
+
+class TestCSVLoadingIdempotency:
+    """Tests that load_csv doesn't duplicate data on re-import."""
+
+    def test_load_csv_twice_does_not_duplicate_creatinine(self, db, temp_csv_file):
+        """
+        Calling load_csv twice should not create duplicate creatinine records,
+        because INSERT OR IGNORE prevents duplicates.
+        """
+        db.load_csv(temp_csv_file)
+        db.load_csv(temp_csv_file)
+
+        cursor = db.conn.execute("SELECT COUNT(*) FROM creatinine_history")
+        count = cursor.fetchone()[0]
+        assert count == 5  # Same as single load, no duplicates
+
+    def test_load_csv_twice_does_not_duplicate_patients(self, db, temp_csv_file):
+        """
+        Calling load_csv twice should not create duplicate patient records.
+        """
+        db.load_csv(temp_csv_file)
+        db.load_csv(temp_csv_file)
+
+        cursor = db.conn.execute("SELECT COUNT(*) FROM patients")
+        count = cursor.fetchone()[0]
+        assert count == 3  # Same as single load
+
