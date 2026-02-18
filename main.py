@@ -16,9 +16,9 @@ from src.pager.pager import Pager
 
 DEFAULT_MLLP_ADDRESS = "localhost:8440"
 DEFAULT_PAGER_ADDRESS = "localhost:8441"
-DEFAULT_DB_PATH = "data/patient.db"
-DEFAULT_HISTORY_CSV = "data/history.csv"
-DEFAULT_TRAINING_CSV = "data/training.csv"
+DEFAULT_DB_PATH = "/state/patient.db"
+DEFAULT_HISTORY_CSV = "/data/history.csv"
+DEFAULT_TRAINING_CSV = "/data/training.csv"
 
 
 def _parse_host_port(address: str) -> tuple[str, int]:
@@ -72,12 +72,13 @@ def _resolve_training_csv() -> str:
     candidates = [
         os.getenv("TRAINING_CSV"),
         DEFAULT_TRAINING_CSV,
+        "data/training.csv",
     ]
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             return candidate
     raise FileNotFoundError(
-        f"Training CSV not found. Set TRAINING_CSV or provide {DEFAULT_TRAINING_CSV}."
+        "Training CSV not found. Set TRAINING_CSV or provide /data/training.csv."
     )
 
 
@@ -99,8 +100,13 @@ async def run() -> None:
     logger.info(f"History CSV: {history_csv}")
     logger.info(f"Training CSV: {training_csv}")
 
+    db_exists = Path(db_path).exists()
     db = PatientDB(db_path=db_path)
-    db.load_csv(history_csv)
+    if db_exists:
+        logger.info(f"Existing database found at {db_path}, skipping history CSV import.")
+    else:
+        logger.info(f"No existing database at {db_path}, loading history CSV...")
+        db.load_csv(history_csv)
 
     classifier = AKIClassifier(patient_db=db)
     classifier.train(csv_path=training_csv)
@@ -146,7 +152,6 @@ async def run() -> None:
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
-            raise
 
         return None
 
