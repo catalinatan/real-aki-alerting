@@ -1,41 +1,83 @@
-# SWEMLS Coursework 3
+# SWEMLS Coursework 6 (Huashan)
 
-## Simulator Setup
+This repository runs the AKI detection service for Coursework 6 using Kubernetes.
 
-### Building the Simulator
+Single source of truth: `deployment.yaml`
 
-To build the simulator Docker image:
+## Exam-Day Checklist (Quick Start, beginner-friendly)
 
+Run these in order.
+
+1) Build the app image
 ```bash
-docker build -t simulator ./simulator
+docker build -t imperialswemlsspring2026.azurecr.io/coursework6-huashan .
 ```
 
-### Running the Simulator
-
-To start the simulator for testing:
-
+2) Push the image to the registry (so Kubernetes can pull it)
 ```bash
-docker run -p 8440:8440 -p 8441:8441 simulator
+docker push imperialswemlsspring2026.azurecr.io/coursework6-huashan
 ```
 
-This will:
-- Expose the MLLP server on ports 8440 and 8441
-- Use the default messages from `messages.mllp`
-
-### Additional Options
-
-**Run in detached mode (background):**
+3) Apply Kubernetes config from this repo
 ```bash
-docker run -d -p 8440:8440 -p 8441:8441 simulator
+kubectl apply -f deployment.yaml
 ```
 
-**Use custom messages file:**
+4) Wait until deployment is healthy
 ```bash
-docker run -p 8440:8440 -p 8441:8441 -v /path/to/messages.mllp:/data/messages.mllp simulator
+kubectl -n huashan rollout status deployment/aki-detection --timeout=120s
+```
+Expected: message like `successfully rolled out`
+
+5) Follow live app logs
+```bash
+kubectl -n huashan logs -f deployment/aki-detection -c aki-detection
+```
+Expected: regular processing lines (for example, inserted creatinine records).
+
+Quick health checks (copy/paste):
+
+```bash
+kubectl -n huashan get pods -l app=aki-detection -o wide
+kubectl -n huashan get events --sort-by=.lastTimestamp | tail -n 20
 ```
 
-**Stop a detached container:**
+If rollout is stuck (plain check first):
+
 ```bash
-docker ps  # Find the container ID
-docker stop <container_id>
+kubectl -n huashan describe deployment aki-detection | grep -E "ProgressDeadlineExceeded|ReplicaFailure|FailedCreate"
+kubectl -n huashan get events --sort-by=.lastTimestamp | tail -n 40
+# Optional safe nudge (brief interruption, pod recreated automatically):
+kubectl -n huashan delete pod -l app=aki-detection
 ```
+
+What “safe nudge” means: delete the current pod so Kubernetes recreates it cleanly. This causes a brief interruption but often clears transient runtime/network issues.
+
+## Metrics check
+
+```bash
+POD=$(kubectl -n huashan get pods -l app=aki-detection -o jsonpath='{.items[0].metadata.name}')
+kubectl -n huashan port-forward "$POD" 8000:8000
+curl -s localhost:8000/metrics | head -n 80
+```
+
+Watch these first:
+- `messages_received_total`
+- `blood_tests_received_total`
+- `aki_predictions_total`
+- `pages_sent_total`
+- `pager_errors_total`
+- `mllp_reconnections_total`
+
+## What is preconfigured in deployment.yaml
+
+- Namespace: `huashan`
+- Coursework 6 simulator endpoints:
+	- `MLLP_ADDRESS=huashan-simulator.coursework6:8440`
+	- `PAGER_ADDRESS=huashan-simulator.coursework6:8441`
+- History init image: `imperialswemlsspring2026.azurecr.io/coursework6-history`
+- Quota-safe rollout: `maxSurge: 0`, `maxUnavailable: 1`
+
+## Common log message (usually okay)
+
+`MLLP read timed out — connection may be dead.` can be normal if it is followed by reconnect and processing continues.

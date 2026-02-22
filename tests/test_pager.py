@@ -4,6 +4,7 @@ Unit tests for Pager Module
 
 import os
 import sys
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -70,12 +71,12 @@ class TestPagerPageSuccess:
             "https://example.com/api/page",
             data="12345678,2024-01-20T16:30:00",
             headers={"Content-Type": "text/plain"},
-            timeout=3
+            timeout=2
         )
 
     @patch("requests.post")
-    def test_page_uses_3_second_timeout(self, mock_post):
-        """POST request includes 3-second timeout."""
+    def test_page_uses_2_second_timeout(self, mock_post):
+        """POST request includes 2-second timeout."""
         mock_response = MagicMock()
         mock_response.raise_for_status = MagicMock()
         mock_post.return_value = mock_response
@@ -83,7 +84,7 @@ class TestPagerPageSuccess:
         self.pager.page("12345678", "2024-01-20T16:30:00")
 
         call_kwargs = mock_post.call_args[1]
-        assert call_kwargs["timeout"] == 3
+        assert call_kwargs["timeout"] == 2
 
 
 class TestPagerPageHTTPErrors:
@@ -101,7 +102,7 @@ class TestPagerPageHTTPErrors:
         )
         mock_post.return_value = mock_response
 
-        result = self.pager.page("12345678", "2024-01-20T16:30:00")
+        result = self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=1, retry_delay=0.0)
 
         assert result is False
 
@@ -114,7 +115,7 @@ class TestPagerPageHTTPErrors:
         )
         mock_post.return_value = mock_response
 
-        result = self.pager.page("12345678", "2024-01-20T16:30:00")
+        result = self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=1, retry_delay=0.0)
 
         assert result is False
 
@@ -130,7 +131,7 @@ class TestPagerPageNetworkErrors:
         """Connection error returns False."""
         mock_post.side_effect = requests.exceptions.ConnectionError("Connection refused")
 
-        result = self.pager.page("12345678", "2024-01-20T16:30:00")
+        result = self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=1, retry_delay=0.0)
 
         assert result is False
 
@@ -139,7 +140,7 @@ class TestPagerPageNetworkErrors:
         """Timeout error returns False."""
         mock_post.side_effect = requests.exceptions.Timeout("Request timed out")
 
-        result = self.pager.page("12345678", "2024-01-20T16:30:00")
+        result = self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=1, retry_delay=0.0)
 
         assert result is False
 
@@ -148,7 +149,7 @@ class TestPagerPageNetworkErrors:
         """Generic RequestException returns False."""
         mock_post.side_effect = requests.exceptions.RequestException("Unknown error")
 
-        result = self.pager.page("12345678", "2024-01-20T16:30:00")
+        result = self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=1, retry_delay=0.0)
 
         assert result is False
 
@@ -197,3 +198,60 @@ class TestPagerPageEdgeCases:
         assert result is True
         call_kwargs = mock_post.call_args[1]
         assert call_kwargs["data"] == "MRN-123/456,2024-01-20T16:30:00"
+
+
+class TestPagerRetryBehavior:
+    """Tests for pager retry logic."""
+
+    def setup_method(self):
+        self.pager = Pager("https://example.com/api/page")
+
+    @patch("requests.post")
+    def test_page_retries_on_failure_then_succeeds(self, mock_post):
+        """Page retries after failure and succeeds on second attempt."""
+        fail_response = MagicMock()
+        fail_response.raise_for_status = MagicMock(
+            side_effect=requests.exceptions.HTTPError("500 Server Error")
+        )
+        success_response = MagicMock()
+        success_response.raise_for_status = MagicMock()
+
+        mock_post.side_effect = [fail_response, success_response]
+
+        result = self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=3, retry_delay=0.0)
+
+        assert result is True
+        assert mock_post.call_count == 2
+
+    @patch("requests.post")
+    def test_page_returns_false_after_all_retries_exhausted(self, mock_post):
+        """Page returns False after all retry attempts fail."""
+        mock_post.side_effect = requests.exceptions.ConnectionError("refused")
+
+        result = self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=3, retry_delay=0.0)
+
+        assert result is False
+        assert mock_post.call_count == 3
+
+    @patch("requests.post")
+    def test_page_no_retry_on_first_success(self, mock_post):
+        """Successful first attempt should not retry."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_post.return_value = mock_response
+
+        result = self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=3, retry_delay=0.0)
+
+        assert result is True
+        assert mock_post.call_count == 1
+
+    @patch("requests.post")
+    @patch("time.sleep")
+    def test_page_sleeps_between_retries(self, mock_sleep, mock_post):
+        """Page sleeps retry_delay seconds between retry attempts."""
+        mock_post.side_effect = requests.exceptions.Timeout("timeout")
+
+        self.pager.page("12345678", "2024-01-20T16:30:00", max_retries=3, retry_delay=2.0)
+
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_called_with(2.0)

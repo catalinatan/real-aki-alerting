@@ -308,3 +308,138 @@ class TestMLLPClientMessageHandler:
         handler.assert_awaited_once()
         call_args = handler.call_args[0][0]
         assert "MSH|" in call_args
+
+
+class TestMLLPClientAlwaysACK:
+    """Tests that ACK is always sent — simulator won't replay messages."""
+
+    def test_ack_sent_even_when_handler_raises(self):
+        """ACK must be sent even on handler failure to keep pipeline flowing."""
+        handler = AsyncMock(side_effect=RuntimeError("DB write failed"))
+        client = MLLPClient(host="localhost", port=8440, message_handler=handler)
+
+        mock_reader = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
+        mock_writer.drain = AsyncMock()
+
+        client.reader = mock_reader
+        client.writer = mock_writer
+        client.running = True
+
+        hl7_message = b"MSH|^~\\&|SIM|SR|||202401201630||ADT^A01|||2.5"
+        wrapped = MLLP_START_BLOCK + hl7_message + MLLP_END_BLOCK + MLLP_CARRIAGE_RETURN
+        mock_reader.read = AsyncMock(side_effect=[wrapped, b""])
+
+        _run(client._process_messages())
+
+        handler.assert_awaited_once()
+        mock_writer.write.assert_called_once()
+
+    def test_ack_sent_when_handler_succeeds(self):
+        """ACK sent on successful processing."""
+        handler = AsyncMock(return_value=None)
+        client = MLLPClient(host="localhost", port=8440, message_handler=handler)
+
+        mock_reader = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
+        mock_writer.drain = AsyncMock()
+
+        client.reader = mock_reader
+        client.writer = mock_writer
+        client.running = True
+
+        hl7_message = b"MSH|^~\\&|SIM|SR|||202401201630||ADT^A01|||2.5"
+        wrapped = MLLP_START_BLOCK + hl7_message + MLLP_END_BLOCK + MLLP_CARRIAGE_RETURN
+        mock_reader.read = AsyncMock(side_effect=[wrapped, b""])
+
+        _run(client._process_messages())
+
+        handler.assert_awaited_once()
+        mock_writer.write.assert_called_once()
+
+
+class TestMLLPClientReadTimeout:
+    """Tests for read timeout handling."""
+
+    def setup_method(self):
+        self.client = MLLPClient(host="localhost", port=8440, read_timeout=1.0)
+
+    def test_read_timeout_triggers_loop_exit(self):
+        """Read timeout should break the processing loop."""
+        mock_reader = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
+        mock_writer.drain = AsyncMock()
+
+        # Simulate a read that never returns data (hangs until timeout)
+        async def hang_forever(*args, **kwargs):
+            await asyncio.sleep(100)
+
+        mock_reader.read = hang_forever
+
+        self.client.reader = mock_reader
+        self.client.writer = mock_writer
+        self.client.running = True
+
+        # Should complete within a few seconds (timeout is 1s), not hang
+        _run(self.client._process_messages())
+
+        # If we get here, the timeout worked and the loop exited
+
+
+class TestMLLPClientStopUnblocksRead:
+    """Tests for SIGTERM-responsive shutdown."""
+
+    def setup_method(self):
+        self.client = MLLPClient(host="localhost", port=8440)
+
+    def test_stop_feeds_eof_to_reader(self):
+        """stop() should call feed_eof on reader to unblock read()."""
+        mock_reader = MagicMock()
+        mock_reader.feed_eof = MagicMock()
+        mock_writer = MagicMock()
+        mock_writer.close = MagicMock()
+        mock_writer.wait_closed = AsyncMock()
+
+        self.client.reader = mock_reader
+        self.client.writer = mock_writer
+
+        _run(self.client.stop())
+
+        mock_reader.feed_eof.assert_called_once()
+
+
+class TestMLLPClientMetrics:
+    """Tests for Prometheus metric instrumentation."""
+
+    def setup_method(self):
+        self.client = MLLPClient(host="localhost", port=8440)
+
+    def test_messages_received_incremented_per_message(self):
+        """messages_received_total increments for each parsed message."""
+        from src.metrics import messages_received_total
+
+        before = messages_received_total._value.get()
+
+        handler = AsyncMock(return_value=None)
+        self.client.message_handler = handler
+
+        mock_reader = AsyncMock()
+        mock_writer = MagicMock()
+        mock_writer.write = MagicMock()
+        mock_writer.drain = AsyncMock()
+
+        self.client.reader = mock_reader
+        self.client.writer = mock_writer
+        self.client.running = True
+
+        hl7_msg = b"MSH|^~\\&|SIM|SR|||202401201630||ADT^A01|||2.5"
+        wrapped = MLLP_START_BLOCK + hl7_msg + MLLP_END_BLOCK + MLLP_CARRIAGE_RETURN
+        mock_reader.read = AsyncMock(side_effect=[wrapped, b""])
+
+        _run(self.client._process_messages())
+
+        after = messages_received_total._value.get()
+        assert after == before + 1

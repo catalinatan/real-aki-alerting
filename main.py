@@ -12,13 +12,20 @@ from src.hl7.parser import HL7Parser, PatientInfo, CreatinineResult
 from src.logger import logger
 from src.model.aki import AKIClassifier
 from src.mllp.client import MLLPClient
+from src.metrics import (
+    start_metrics_server,
+    blood_tests_received_total,
+    blood_test_value,
+    aki_predictions_total,
+    pages_sent_total,
+)
 from src.pager.pager import Pager
 
 DEFAULT_MLLP_ADDRESS = "localhost:8440"
 DEFAULT_PAGER_ADDRESS = "localhost:8441"
 DEFAULT_DB_PATH = "/state/patient.db"
 DEFAULT_HISTORY_CSV = "/data/history.csv"
-DEFAULT_TRAINING_CSV = "/data/training.csv"
+DEFAULT_TRAINING_CSV = "/app/training.csv"
 
 
 def _parse_host_port(address: str) -> tuple[str, int]:
@@ -115,6 +122,8 @@ async def run() -> None:
     pager = Pager(pager_url, payload_format="csv")
 
     async def handle_message(hl7_message: str) -> Optional[str]:
+        # Always ACK every message — the simulator will NOT replay messages,
+        # so we must never stall the pipeline. Errors are logged internally.
         try:
             result = parser.parse(hl7_message)
 
@@ -129,12 +138,16 @@ async def run() -> None:
 
             if isinstance(result, CreatinineResult):
                 db.insert_creatinine(result)
+                blood_tests_received_total.inc()
+                if result.creatinine_result is not None:
+                    blood_test_value.observe(result.creatinine_result)
                 logger.info(
                     f"Inserted creatinine for MRN={result.mrn}: {result.creatinine_result}"
                 )
 
                 prediction = classifier.predict(result.mrn)
                 if prediction == "y":
+                    aki_predictions_total.labels(result="positive").inc()
                     prediction_time = None
                     if result.creatinine_date:
                         prediction_time = result.creatinine_date.strftime("%Y%m%d%H%M%S")
@@ -142,12 +155,14 @@ async def run() -> None:
                         pager.page, result.mrn, prediction_time
                     )
                     if success:
+                        pages_sent_total.inc()
                         logger.warning(
                             f"AKI ALERT: Paged for MRN={result.mrn} at {prediction_time}"
                         )
                     else:
                         logger.error(f"Failed to page for MRN={result.mrn}")
                 else:
+                    aki_predictions_total.labels(result="negative").inc()
                     logger.info(f"AKI prediction for {result.mrn}: negative")
 
         except Exception as e:
@@ -171,6 +186,9 @@ async def run() -> None:
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, signal_handler)
+
+    start_metrics_server()
+    logger.info("Prometheus metrics server started on port 8000")
 
     logger.info("Starting AKI inference pipeline...")
     try:

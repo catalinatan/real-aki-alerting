@@ -1,0 +1,211 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aki-detection-state
+  namespace: huashan
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Service for aki-detection (enables Prometheus scraping via DNS)
+apiVersion: v1
+kind: Service
+metadata:
+  name: aki-detection
+  namespace: huashan
+spec:
+  selector:
+    app: aki-detection
+  ports:
+    - name: metrics
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aki-detection
+  namespace: huashan
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: aki-detection
+  template:
+    metadata:
+      labels:
+        app: aki-detection
+    spec:
+      containers:
+      - name: aki-detection
+        image: imperialswemlsspring2026.azurecr.io/coursework6-huashan
+        command: ["/app/bin/python", "main.py"]
+        env:
+        - name: MLLP_ADDRESS
+          value: huashan-simulator.coursework6:8440
+        - name: PAGER_ADDRESS
+          value: huashan-simulator.coursework6:8441
+        - name: DB_PATH
+          value: /state/patient.db
+        - name: HISTORY_CSV
+          value: /data/history.csv
+        - name: TRAINING_CSV
+          value: /app/training.csv
+        ports:
+        - name: metrics
+          containerPort: 8000
+        volumeMounts:
+          - mountPath: "/data"
+            name: hospital-history
+            readOnly: true
+          - mountPath: "/state"
+            name: aki-detection-state
+        resources:
+          requests:
+            memory: 700Mi
+            cpu: 800m
+      initContainers:
+      - name: copy-hospital-history
+        image: imperialswemlsspring2026.azurecr.io/coursework6-history
+        volumeMounts:
+          - mountPath: "/data"
+            name: hospital-history
+        resources:
+          requests:
+            memory: 200Mi
+            cpu: 100m
+      volumes:
+      - name: hospital-history
+        emptyDir:
+          sizeLimit: 50Mi
+      - name: aki-detection-state
+        persistentVolumeClaim:
+          claimName: aki-detection-state
+---
+# Prometheus ConfigMap (scrape config + alert rules)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: huashan
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        group: huashan
+
+    rule_files:
+      - /etc/prometheus/alert_rules.yml
+
+    alerting:
+      alertmanagers:
+        - scheme: http
+          static_configs:
+            - targets:
+                - "prom-ui.coursework6:9093"
+
+    scrape_configs:
+      - job_name: aki-detection
+        static_configs:
+          - targets:
+              - aki-detection.huashan.svc.cluster.local:8000
+
+  alert_rules.yml: |
+    groups:
+      - name: aki-detection-alerts
+        rules:
+          - alert: MessagesNotBeingReceived
+            expr: rate(messages_received_total[5m]) == 0 or absent(messages_received_total)
+            for: 10m
+            labels:
+              severity: critical
+              group: huashan
+            annotations:
+              summary: "AKI detection service is not receiving HL7 messages"
+              description: "messages_received_total has not increased for 10 minutes"
+
+          - alert: BloodTestsNotFlowing
+            expr: rate(blood_tests_received_total[5m]) == 0 or absent(blood_tests_received_total)
+            for: 10m
+            labels:
+              severity: critical
+              group: huashan
+            annotations:
+              summary: "Blood test results have stopped flowing"
+              description: "blood_tests_received_total has not increased for 10 minutes"
+
+          - alert: PagerErrorsOccurring
+            expr: rate(pager_errors_total[5m]) > 0
+            for: 2m
+            labels:
+              severity: warning
+              group: huashan
+            annotations:
+              summary: "Pager HTTP errors are occurring"
+              description: "pager_errors_total is increasing — pages may be failing"
+
+          - alert: MLLPReconnections
+            expr: rate(mllp_reconnections_total[5m]) > 0
+            for: 2m
+            labels:
+              severity: warning
+              group: huashan
+            annotations:
+              summary: "MLLP connection instability detected"
+              description: "mllp_reconnections_total is increasing — connection is dropping"
+---
+# Prometheus Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: huashan
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.54.0
+        args:
+          - "--config.file=/etc/prometheus/prometheus.yml"
+          - "--storage.tsdb.path=/prometheus"
+          - "--storage.tsdb.retention.time=14d"
+          - "--storage.tsdb.retention.size=500MB"
+        ports:
+        - name: http
+          containerPort: 9090
+        volumeMounts:
+          - name: config
+            mountPath: /etc/prometheus
+            readOnly: true
+          - name: storage
+            mountPath: /prometheus
+        resources:
+          requests:
+            memory: 200Mi
+            cpu: 100m
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: storage
+        emptyDir:
+          sizeLimit: 500Mi

@@ -12,6 +12,7 @@ from datetime import datetime
 import hl7
 
 from src.logger import logger
+from src.metrics import messages_received_total, mllp_reconnections_total
 
 # MLLP Constants (Standard HL7 framing bytes)
 MLLP_START_BLOCK = b'\x0b'
@@ -21,6 +22,7 @@ MLLP_CARRIAGE_RETURN = b'\x0d'
 # Default Configuration
 DEFAULT_RECONNECT_DELAY = 5.0
 DEFAULT_MAX_MESSAGE_SIZE = 1024 * 1024  # 1 MB
+DEFAULT_READ_TIMEOUT = 600.0  # 10 minutes
 
 class MLLPClient:
     """
@@ -36,7 +38,8 @@ class MLLPClient:
         message_handler: Optional[Callable[[str], Awaitable[Optional[str]]]] = None,
         reconnect_delay: float = DEFAULT_RECONNECT_DELAY,
         max_message_size: int = DEFAULT_MAX_MESSAGE_SIZE,
-        auto_reconnect: bool = True
+        auto_reconnect: bool = True,
+        read_timeout: float = DEFAULT_READ_TIMEOUT
     ):
         """
         Initialize the MCP client.
@@ -56,6 +59,7 @@ class MLLPClient:
         self.reconnect_delay = reconnect_delay
         self.max_message_size = max_message_size
         self.auto_reconnect = auto_reconnect
+        self.read_timeout = read_timeout
 
         self.reader: Optional[asyncio.StreamReader] = None
         self.writer: Optional[asyncio.StreamWriter] = None
@@ -276,7 +280,10 @@ class MLLPClient:
         while self.running and not self.is_shutting_down:
             try:
                 # Read data from server
-                data = await self.reader.read(self.max_message_size)
+                data = await asyncio.wait_for(
+                    self.reader.read(self.max_message_size),
+                    timeout=self.read_timeout,
+                )
 
                 if not data:
                     logger.warning("Connection closed by server.")
@@ -288,6 +295,7 @@ class MLLPClient:
 
                 # Process each complete message
                 for hl7_message_bytes in messages:
+                    messages_received_total.inc()
                     try:
                         hl7_message = hl7_message_bytes.decode('utf-8')
                     except UnicodeDecodeError as e:
@@ -296,13 +304,14 @@ class MLLPClient:
 
                     logger.debug(f"Received HL7 message:\n{hl7_message}")
 
-                    # Process message via handler
+                    # Process message via handler — always ACK to keep pipeline
+                    # flowing, since the simulator will NOT replay messages.
                     ack_code = "AA"
                     try:
                         custom_ack = await self.message_handler(hl7_message)
                     except Exception as e:
-                        logger.error(f"Error in message handler: {e}")
-                        ack_code = "AE" # Force Application Error ACK
+                        logger.error(f"Error in message handler: {e}", exc_info=True)
+                        ack_code = "AE"
                         custom_ack = None
 
                     # Generate ACK if handler returned None
@@ -316,6 +325,9 @@ class MLLPClient:
                     await self.writer.drain()
                     logger.debug(f"Sent ACK message:\n{ack_message}")
 
+            except asyncio.TimeoutError:
+                logger.warning("MLLP read timed out — connection may be dead.")
+                break
             except ValueError as e:
                 logger.error(f"MLLP framing error: {e}")
                 break
@@ -344,6 +356,7 @@ class MLLPClient:
             # Connect to server
             if not await self._connect():
                 if self.auto_reconnect:
+                    mllp_reconnections_total.inc()
                     logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
                     await asyncio.sleep(self.reconnect_delay)
                     continue
@@ -363,6 +376,7 @@ class MLLPClient:
 
             # Reconnect if enabled
             if self.auto_reconnect and not self.is_shutting_down:
+                mllp_reconnections_total.inc()
                 logger.info(f"Reconnecting in {self.reconnect_delay} seconds...")
                 await asyncio.sleep(self.reconnect_delay)
             else:
@@ -383,9 +397,11 @@ class MLLPClient:
         logger.info("Stopping MLLP client...")
         self.is_shutting_down = True
         self.running = False
-        
-        # Disconnect if currently connected
+
+        if self.reader:
+            self.reader.feed_eof()
+
         if self.writer:
             await self._disconnect()
-        
+
         logger.info("MLLP client stopped.")
