@@ -32,7 +32,7 @@ class Pager:
     def page(self, mrn: str, prediction_time: Optional[str] = None) -> bool:
         """
         Send POST request to target URL with paging information.
-        Returns True if page successful, else False.
+        Retries on failure up to max_retries times.
 
         Args:
             mrn (str): Medical Record Number of patient to page on
