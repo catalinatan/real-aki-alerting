@@ -42,7 +42,7 @@ class MLLPClient:
         read_timeout: float = DEFAULT_READ_TIMEOUT
     ):
         """
-        Initialize the MCP client.
+        Initialize the MLLP client.
 
         Args:
             host (str): Server hostname or IP address
@@ -264,9 +264,6 @@ class MLLPClient:
             finally:
                 self.reader = None
                 self.writer = None
-        logger.info("Disconnected from MLLP server.")
-
-        return None
 
     async def _process_messages(self):
         """
