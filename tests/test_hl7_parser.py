@@ -2,14 +2,10 @@
 Unit tests for HL7 Parser Module
 """
 
-import os
-import sys
 from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.hl7.parser import HL7Parser, PatientInfo, CreatinineResult, MessageType
 

@@ -5,7 +5,12 @@ Creates POST request to target URL to page clinical response team
 upon receiving positive prediction from AKI model.
 """
 
+from typing import Optional
+
 import requests
+
+from src.logger import logger
+
 
 class Pager:
     """
@@ -23,20 +28,20 @@ class Pager:
         """
         self.target_url = target_url
         self.payload_format = payload_format
-        
-    def page(self, mrn: str, prediction_time: str) -> bool:
+
+    def page(self, mrn: str, prediction_time: Optional[str] = None) -> bool:
         """
         Send POST request to target URL with paging information.
         Returns True if page successful, else False.
 
         Args:
             mrn (str): Medical Record Number of patient to page on
-            prediction_time (str): Time of prediction in ISO 8601 format
+            prediction_time (Optional[str]): Timestamp in HL7 format
+                (yyyyMMddHHmmss), or None to omit.
 
         Returns:
             bool: True if page successful, else False
         """
-
         try:
             if self.payload_format == "json":
                 payload = {
@@ -54,8 +59,8 @@ class Pager:
                 )
             else:
                 raise ValueError(f"Unsupported payload format: {self.payload_format}")
-            response.raise_for_status()  # Raises exception for 4xx/5xx
+            response.raise_for_status()
             return True
         except requests.exceptions.RequestException as e:
-            # Log error or raise
+            logger.error(f"Pager request failed for MRN={mrn}: {e}")
             return False

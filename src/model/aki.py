@@ -22,8 +22,8 @@ class AKIClassifier():
     """
     def __init__(self, patient_db: PatientDB):
         """
-        Initializes XGBoost implementation of AKI Classifier. It requires initial
-        training dataset to train static model for inference.
+        Initialize a sklearn GradientBoostingClassifier for AKI detection.
+        Requires a training dataset to fit the model before inference.
 
         Args:
             patient_db (PatientDB): Patient database instance for inference

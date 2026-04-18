@@ -72,13 +72,12 @@ def _resolve_training_csv() -> str:
     candidates = [
         os.getenv("TRAINING_CSV"),
         DEFAULT_TRAINING_CSV,
-        "data/training.csv",
     ]
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             return candidate
     raise FileNotFoundError(
-        "Training CSV not found. Set TRAINING_CSV or provide /data/training.csv."
+        f"Training CSV not found. Set TRAINING_CSV or provide {DEFAULT_TRAINING_CSV}."
     )
 
 
@@ -147,6 +146,7 @@ async def run() -> None:
 
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
+            raise
 
         return None
 

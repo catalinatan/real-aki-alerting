@@ -39,7 +39,7 @@ class MLLPClient:
         auto_reconnect: bool = True
     ):
         """
-        Initialize the MCP client.
+        Initialize the MLLP client.
 
         Args:
             host (str): Server hostname or IP address
@@ -260,9 +260,6 @@ class MLLPClient:
             finally:
                 self.reader = None
                 self.writer = None
-        logger.info("Disconnected from MLLP server.")
-
-        return None
 
     async def _process_messages(self):
         """

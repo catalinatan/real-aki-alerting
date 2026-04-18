@@ -49,8 +49,6 @@ class HL7Parser:
     Parses ADT^A01 and ADT^A03 messages for patient info
     and ORU^R01 messages for creatinine results.
     """
-    def __init__(self):
-        pass
 
     def _safe_field(self, segment, index: int, default: str = "") -> str:
         """
