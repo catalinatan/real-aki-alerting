@@ -2,14 +2,10 @@
 Unit tests for Pager Module
 """
 
-import os
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.pager.pager import Pager
 

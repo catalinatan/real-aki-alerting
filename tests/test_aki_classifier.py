@@ -3,16 +3,13 @@ Unit tests for AKI Classifier Module
 """
 
 import os
-import sys
+import tempfile
 from datetime import datetime, timedelta
 from unittest.mock import Mock, MagicMock, patch
-import tempfile
 
 import pytest
 import pandas as pd
 import numpy as np
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.model.aki import AKIClassifier, PREDICTION_THRESHOLD
 from src.database.patient import PatientDB

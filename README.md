@@ -1,41 +1,77 @@
-# SWEMLS Coursework 3
+# AKI Inference Service
 
-## Simulator Setup
+Real-time acute kidney injury (AKI) detection for hospital lab streams.
 
-### Building the Simulator
+## What it does
 
-To build the simulator Docker image:
+Consumes HL7v2 ADT and ORU messages over MLLP, maintains a per-patient
+creatinine history in SQLite, and runs a gradient-boosted classifier on each
+new result. Positive predictions trigger an HTTP page to the clinical response
+team.
+
+## Tech stack
+
+- Python 3.13, `asyncio`
+- `hl7` (HL7v2 parsing), `scikit-learn` (`GradientBoostingClassifier`),
+  `pandas`, `numpy`
+- SQLite (WAL mode) for patient state
+- Docker (Ubuntu `noble` base)
+- `pytest` for unit and integration tests
+
+## How to run
+
+### Local
 
 ```bash
-docker build -t simulator ./simulator
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
 ```
 
-### Running the Simulator
-
-To start the simulator for testing:
+### Docker
 
 ```bash
-docker run -p 8440:8440 -p 8441:8441 simulator
+docker build -t aki-service .
+docker run --rm \
+  -e MLLP_ADDRESS=host.docker.internal:8440 \
+  -e PAGER_ADDRESS=host.docker.internal:8441 \
+  aki-service
 ```
 
-This will:
-- Expose the MLLP server on ports 8440 and 8441
-- Use the default messages from `messages.mllp`
+### Simulator (for local testing)
 
-### Additional Options
-
-**Run in detached mode (background):**
 ```bash
-docker run -d -p 8440:8440 -p 8441:8441 simulator
+docker build -t aki-simulator ./simulator
+docker run --rm -p 8440:8440 -p 8441:8441 aki-simulator
 ```
 
-**Use custom messages file:**
+### Configuration
+
+| Variable       | Default               | Purpose              |
+| -------------- | --------------------- | -------------------- |
+| `MLLP_ADDRESS` | `localhost:8440`      | HL7 source           |
+| `PAGER_ADDRESS`| `localhost:8441`      | Pager HTTP endpoint  |
+| `DB_PATH`      | `data/patient.db`     | SQLite file          |
+| `HISTORY_CSV`  | `data/history.csv`    | Bootstrap history    |
+| `TRAINING_CSV` | `data/training.csv`   | Model training data  |
+| `LOG_LEVEL`    | `INFO`                | Log verbosity        |
+
+### Tests
+
 ```bash
-docker run -p 8440:8440 -p 8441:8441 -v /path/to/messages.mllp:/data/messages.mllp simulator
+pytest tests/
 ```
 
-**Stop a detached container:**
-```bash
-docker ps  # Find the container ID
-docker stop <container_id>
-```
+## Key results / metrics
+
+_To be populated once benchmarks are run on the holdout set._
+
+- Classification: F3 score on holdout set — _TBD_
+- End-to-end latency (ORU receipt → pager POST): p50 / p95 — _TBD_
+- Sustained throughput (messages/sec) — _TBD_
+
+## Data
+
+`data/history.csv` and `data/training.csv` are synthetic coursework fixtures —
+no real patient data is committed to the repository. The simulator ships with
+a fixed replay of HL7 messages in `simulator/messages.mllp`.

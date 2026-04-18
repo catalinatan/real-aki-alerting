@@ -26,7 +26,15 @@ dist/
 
 # IDE/OS
 .vscode/
+.idea/
 .DS_Store
+Thumbs.db
+*.swp
+*.code-workspace
+
+# Environment
+.env
+.env.local
 
 # Database
 *.db

@@ -3,13 +3,10 @@ Integration tests for PatientDB workflows.
 """
 
 import os
-import sys
 import tempfile
 from datetime import datetime
 
 import pytest
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from src.database.patient import PatientDB
 from src.hl7.parser import PatientInfo, CreatinineResult
